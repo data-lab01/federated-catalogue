@@ -1,0 +1,102 @@
+{
+  "@context": [
+    "https://www.w3.org/2018/credentials/v1",
+    "https://w3id.org/security/suites/jws-2020/v1"
+  ],
+  "@id": "http://example.edu/verifiablePresentation/self-description1",
+  "type": [
+    "VerifiablePresentation"
+  ],
+  "verifiableCredential": [
+    {
+      "@context": [
+        "https://www.w3.org/2018/credentials/v1",
+        "https://w3id.org/security/suites/jws-2020/v1",
+        "https://registry.lab.gaia-x.eu/development/api/trusted-shape-registry/v1/shapes/jsonld/trustframework#"
+      ],
+      "@id": "https://www.example.org/legalPerson1.json",
+      "@type": [
+        "VerifiableCredential"
+      ],
+      "issuer": "http://gaiax.de",
+      "issuanceDate": "2022-10-19T18:48:09Z",
+      "credentialSubject": {
+        "@id": "https://w3id.org/gaia-x/2511#Provider1",
+        "@type": [
+          "https://w3id.org/gaia-x/2511#LegalPerson"
+        ],
+        "https://w3id.org/gaia-x/2511#headquarterAddress": [
+          {
+            "@type": [
+              "http://www.w3.org/2006/vcard/ns#Address"
+            ],
+            "http://www.w3.org/2006/vcard/ns#country-name": [
+              {
+                "@value": "Country"
+              }
+            ],
+            "http://www.w3.org/2006/vcard/ns#locality": [
+              {
+                "@value": "Town Name"
+              }
+            ],
+            "http://www.w3.org/2006/vcard/ns#postal-code": [
+              {
+                "@value": "1234"
+              }
+            ],
+            "http://www.w3.org/2006/vcard/ns#street-address": [
+              {
+                "@value": "Street Name"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "@context": [
+        "https://www.w3.org/2018/credentials/v1"
+      ],
+      "@id": "https://www.example.org/legalPerson2.json",
+      "@type": [
+        "VerifiableCredential"
+      ],
+      "issuer": "http://gaiax.de",
+      "issuanceDate": "2022-10-19T18:48:09Z",
+      "credentialSubject": {
+        "@id": "https://w3id.org/gaia-x/2511#Provider1",
+        "@type": [
+          "https://w3id.org/gaia-x/2511#LegalPerson"
+        ],
+        "https://w3id.org/gaia-x/2511#legalAddress": [
+          {
+            "@type": [
+              "http://www.w3.org/2006/vcard/ns#Address"
+            ],
+            "http://www.w3.org/2006/vcard/ns#country-name": [
+              {
+                "@value": "Country"
+              }
+            ],
+            "http://www.w3.org/2006/vcard/ns#locality": [
+              {
+                "@value": "Town Name"
+              }
+            ],
+            "http://www.w3.org/2006/vcard/ns#postal-code": [
+              {
+                "@value": "1234"
+              }
+            ],
+            "http://www.w3.org/2006/vcard/ns#street-address": [
+              {
+                "@value": "Street Name"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

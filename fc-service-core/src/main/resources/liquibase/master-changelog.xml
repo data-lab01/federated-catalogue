@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.1.xsd">
+
+    <include file="sd_store.xml" relativeToChangelogFile="true" />
+    <include file="schema_store.xml" relativeToChangelogFile="true" />
+    <include file="validators.xml" relativeToChangelogFile="true" />
+    <include file="ces_tracker.xml" relativeToChangelogFile="true" />
+    <include file="asset_store_rename.xml" relativeToChangelogFile="true" />
+    <include file="changesets/006-technical_ids.xml" relativeToChangelogFile="true" />
+    <include file="changesets/007-envers_audit.xml" relativeToChangelogFile="true" />
+    <include file="changesets/008-rename-timestamps.xml" relativeToChangelogFile="true" />
+    <include file="changesets/009-asset-versioning.xml" relativeToChangelogFile="true" />
+    <include file="changesets/010-admin-config-tables.xml" relativeToChangelogFile="true" />
+    <include file="changesets/011-audit-user-tracking.xml" relativeToChangelogFile="true" />
+    <include file="changesets/012-asset-links.xml" relativeToChangelogFile="true" />
+    <include file="changesets/013-validation-result.xml" relativeToChangelogFile="true" />
+    <include file="changesets/014-provenance-credentials.xml" relativeToChangelogFile="true" />
+    <include file="changesets/015-validation-result-outdated.xml" relativeToChangelogFile="true" />
+    <include file="changesets/016-content-kind.xml" relativeToChangelogFile="true" />
+    <include file="changesets/017-trust-framework-role-states.xml" relativeToChangelogFile="true" />
+    <include file="changesets/018-mock-trust-framework-seed.xml" relativeToChangelogFile="true" />
+    <include file="changesets/019-drop-trust-framework-dead-cols.xml" relativeToChangelogFile="true"/>
+    <include file="changesets/020-trust-framework-bundle-config.xml" relativeToChangelogFile="true"/>
+    <include file="changesets/021-rename-trust-framework-role-to-base-class.xml" relativeToChangelogFile="true"/>
+    <include file="changesets/022-validation-result-failure-category.xml" relativeToChangelogFile="true"/>
+</databaseChangeLog>

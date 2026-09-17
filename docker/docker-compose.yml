@@ -1,0 +1,286 @@
+###
+# ---license-start
+# fc-service
+# ---
+# Copyright (c) 2022 - 2026 Contributors to the Eclipse Foundation
+# ---
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Apache License, Version 2.0 which is available at
+# https://www.apache.org/licenses/LICENSE-2.0.
+#
+# SPDX-License-Identifier: Apache-2.0
+# ---license-end
+###
+
+services:
+  postgres:
+    container_name: "fc-postgres"
+    image: library/postgres:14
+    restart: on-failure
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_MULTIPLE_DATABASES: fed_cat, keycloak
+    expose:
+      - "5432"
+    ports:
+      - "5432:5432"
+    networks:
+      - "gaia-x"
+    volumes:
+      - fc-pgdata:/var/lib/postgresql/data/
+      - ./postgres-initdb-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: pg_isready -d postgres -U postgres
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          
+  neo4j:
+    container_name: "neo4j"
+    image: neo4j:5.18.0
+    environment:
+      NEO4J_AUTH: "${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-neo12345}"
+      NEO4J_server_http_listen__address: :7474
+      NEO4J_server_bolt_listen__address: :7687
+      # Only n10s.* is called by the graph-store adapter (RDF import). apoc.* and gds.* are
+      # not used and are deliberately not installed or allowlisted: unsandboxed procedures
+      # are reachable from the user-facing Cypher query endpoint.
+      NEO4J_PLUGINS: '["n10s"]'
+      NEO4J_dbms_security_procedures_unrestricted: n10s.*
+      NEO4J_dbms_security_procedures_allowlist: n10s.*
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    networks:
+      - "gaia-x"
+    restart: always
+    command: neo4j
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+#    volumes:
+#      - '$HOME/neo4j/data:/data'
+#      - '$HOME/neo4j/conf/:/conf/'
+
+  keycloak:
+    container_name: "key-server"
+    environment:
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KC_DB_SCHEMA: public
+      KC_FEATURES: preview
+      KEYCLOAK_ADMIN: "${KEYCLOAK_ADMIN}"
+      KEYCLOAK_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD}"
+      PROXY_ADDRESS_FORWARDING: "true"
+    image: quay.io/keycloak/keycloak:26.0
+    ports:
+      - "8080:8080"
+    networks:
+      gaia-x:
+        aliases:
+          - key-server
+    restart: unless-stopped
+    volumes:
+      - "../keycloak/providers:/opt/keycloak/providers"
+      - "../keycloak/realms/${KC_REALM_ENV}:/opt/keycloak/data/import"
+    command: >
+      start --db postgres --hostname-strict false --http-enabled true --import-realm
+      --log-level=DEBUG,io.quarkus:INFO,liquibase:INFO,org.hibernate:INFO,org.infinispan:INFO,org.keycloak.services.scheduled:INFO,org.keycloak.transaction:INFO,io.netty.buffer.PoolThreadCache:INFO,org.keycloak.models.sessions.infinispan:INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  nats:
+    image: nats:alpine
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    restart: always
+    command: --js --sd /data -p 4222 -m 8222
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8222/healthz || exit 1
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks: 
+      - "gaia-x"
+
+
+  # Fuseki SPARQL-star backend. Always present so the admin "Switch Backend" action
+  # can pre-flight either backend regardless of which one is currently active. Cost:
+  # ~1 GB JVM heap idle.
+  fuseki:
+    container_name: "fuseki"
+    build:
+      context: ./fuseki
+    environment:
+      JAVA_OPTIONS: "-Xmx1g"
+    command: ["--tdb2", "--loc=/fuseki/databases/ds", "--update", "/ds"]
+    ports:
+      - "3330:3030"
+    networks:
+      - "gaia-x"
+    restart: unless-stopped
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:3030/ds || exit 1
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Local trust environment for signature verification. Serves three roles:
+  #   1. DID resolution:    /.well-known/did.json        (did:web:did-server → public key JWK)
+  #   2. Cert chain hosting: /certs/chain.pem             (x5u target for trust anchor validation)
+  #   3. Trust anchor mock:  /api/trustAnchor/chain/file  (returns 200 for any POST)
+  # See: cat-integration-tests/docs/adr/002-did-web-over-did-jwk.md
+  did-server:
+    container_name: "did-server"
+    image: nginx:alpine
+    volumes:
+      - ./did-server/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./did-server/certs:/etc/nginx/certs:ro
+      - ./did-server/www:/usr/share/nginx/html:ro
+    networks:
+      gaia-x:
+        aliases:
+          - did-server
+    restart: unless-stopped
+
+  # Mock GXDCH compliance service (WireMock) backing the mock-2026 trust-framework bundle.
+  # The mock-2026 filesystem override (mounted on server) points service_url here, so
+  # @uses.compliance-mock BDD scenarios drive compliance checks against a stub instead of a
+  # live GXDCH operator. Idle unless a compliance check runs.
+  compliance-mock:
+    container_name: "compliance-mock"
+    image: wiremock/wiremock:3.13.2
+    networks:
+      - "gaia-x"
+    ports:
+      # 8089 on host to avoid conflict with Keycloak (8080).
+      # BDD tests reach WireMock admin API at http://localhost:8089.
+      - "8089:8080"
+
+  server:
+    container_name: "fc-server"
+#    image: node-654e3bca7fbeeed18f81d7c7.ps-xaas.io/catalogue/fc-service-server:2.0.0
+    build:
+      context: "${FC_SERVICE_SERVER_DOCKER_CONTEXT}"
+      dockerfile: "${FC_DOCKERFILE:-Dockerfile}"
+      target: "${FC_SERVICE_SERVER_DOCKER_TARGET}"
+    environment:
+      KEYCLOAK_CREDENTIALS_SECRET: "${FC_CLIENT_SECRET}"
+      KEYCLOAK_ADMIN_CONSOLE_URL: "${KEYCLOAK_ADMIN_CONSOLE_URL}"
+      SPRING_DATASOURCE_URL: "${DB_URL}"
+      # Cold-boot fallback only. After the first admin "Switch Backend" action,
+      # admin_config[graphstore.preferred.backend] takes precedence — this env
+      # var only seeds the first boot before any persisted preference exists.
+      GRAPHSTORE_IMPL: "${GRAPH_STORE_IMPL:-fuseki}"
+      # Per-backend URIs — both are read at runtime so the pre-flight probe in
+      # GraphDatabaseAdminService can verify the target before the operator persists
+      # a switch. The Neo4j URI also seeds Spring Data Neo4j autoconfig below.
+      GRAPHSTORE_NEO4J_URI: "${NEO4J_URI:-bolt://neo4j:7687}"
+      GRAPHSTORE_FUSEKI_URI: "${GRAPH_STORE_FUSEKI_URI:-http://fuseki:3030/ds}"
+      # Neo4j credentials — single source of truth, also read by the neo4j service
+      # above for NEO4J_AUTH. The fc-graphdb-neo4j adapter reads these via the
+      # graphstore.user / graphstore.password properties.
+      GRAPHSTORE_USER: "${NEO4J_USER:-neo4j}"
+      GRAPHSTORE_PASSWORD: "${NEO4J_PASSWORD:-neo12345}"
+      # Spring Data Neo4j autoconfiguration — independent of which graph backend is
+      # active so Neo4j-specific autoconfig stays consistent.
+      SPRING_NEO4J_URI: "${NEO4J_URI:-bolt://neo4j:7687}"
+      SPRING_NEO4J_AUTHENTICATION_USERNAME: "${NEO4J_USER:-neo4j}"
+      SPRING_NEO4J_AUTHENTICATION_PASSWORD: "${NEO4J_PASSWORD:-neo12345}"
+      PUBLISHER_IMPL: nats
+      PUBLISHER_URL: ${NATS_URL}
+      SUBSCRIBER_IMPL: none
+      # DID resolution: 'local' resolves did:web directly from this container;
+      # 'uni-res' delegates to an external Universal Resolver (requires network access).
+      # Local is required for docker-compose where did-server is only reachable on the Docker network.
+      FEDERATED_CATALOGUE_VERIFICATION_SIGNATURE_VERIFIER: local
+      # Verification defaults: only semantics enabled.
+      # Signatures are off because they provide no security without the trust framework (ADR 3).
+      # Use docker-compose.strict.yml overlay to enable full verification.
+      FEDERATED_CATALOGUE_VERIFICATION_VP_SIGNATURE: "${VERIFY_VP_SIGNATURE:-false}"
+      FEDERATED_CATALOGUE_VERIFICATION_VC_SIGNATURE: "${VERIFY_VC_SIGNATURE:-false}"
+      # Enable a trust framework by listing its family (matches framework.yaml `family` field).
+      # Multiple families: comma-separated, e.g. "gaia-x,untp".
+      FEDERATED_CATALOGUE_ENABLED_TRUST_FRAMEWORKS: "${ENABLED_TRUST_FRAMEWORKS:-}"
+      # Verification toggles: see arc42 chapter 5 "Verification toggle interactions"
+      # for how SEMANTICS and signature flags compose.
+      # VP/VC envelope semantic checks — 422 on violation.
+      FEDERATED_CATALOGUE_VERIFICATION_SEMANTICS: "${VERIFY_SEMANTICS:-true}"
+      # Filesystem bundle overrides (by id). The mock-2026 bundle here redirects its
+      # service_url to the compliance-mock container; gaia-x-2511 can override the trust anchor.
+      FEDERATED_CATALOGUE_TRUST_FRAMEWORKS_OVERRIDE_PATH: /app/trustframeworks-override
+      JAVA_TOOL_OPTIONS: >-
+        -Djavax.net.ssl.trustStore=/opt/certs/custom-cacerts
+        -Djavax.net.ssl.trustStorePassword=changeit
+    volumes:
+      - ./certs/custom-cacerts:/opt/certs/custom-cacerts:ro
+      # Filesystem trust-framework bundle overrides (mock-2026 → compliance-mock, etc.).
+      - ./trustframeworks:/app/trustframeworks-override:ro
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8081/actuator/health || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    ports:
+      - "8081:8081"
+    networks:
+      - "gaia-x"
+    restart: always #unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Graph backends are started in parallel but not gated — fc-server tolerates a
+      # temporarily-unavailable graph store at boot (logs a warning and starts). The
+      # pre-flight probe in GraphDatabaseAdminService is the real gate, before the
+      # operator persists a switch.
+      nats:
+        condition: service_healthy
+      did-server:
+        condition: service_started
+      compliance-mock:
+        condition: service_started
+  portal:
+    container_name: "demo-portal"
+#    image: node-654e3bca7fbeeed18f81d7c7.ps-xaas.io/catalogue/fc-demo-portal:2.0.0
+    build:
+      context: "${FC_DEMO_PORTAL_DOCKER_CONTEXT}"
+      dockerfile: "${FC_DOCKERFILE:-Dockerfile}"
+      target: "${FC_DEMO_PORTAL_DOCKER_TARGET}"
+    environment:
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_FC_CLIENT_OIDC_CLIENT_SECRET: "${FC_CLIENT_SECRET}"
+      KEYCLOAK_REALM: "${KEYCLOAK_REALM:-federated-catalogue-realm}"
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_ISSUER_URI: http://key-server:8080/realms/${KEYCLOAK_REALM:-federated-catalogue-realm}
+      FEDERATED_CATALOGUE_BASE_URI: http://fc-server:8081
+    ports:
+      - "8088:8088"
+    networks:
+      - "gaia-x"
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+
+volumes:
+  fc-pgdata:
+
+networks:
+  gaia-x:
+    driver: "bridge"

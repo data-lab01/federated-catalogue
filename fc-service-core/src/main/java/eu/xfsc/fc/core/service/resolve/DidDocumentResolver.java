@@ -1,0 +1,79 @@
+package eu.xfsc.fc.core.service.resolve;
+
+/*-
+ * ---license-start
+ * fc-service-core
+ * ---
+ * Copyright (c) 2022 - 2026 Contributors to the Eclipse Foundation
+ * ---
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License, Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ * ---license-end
+ */
+
+import java.util.Map;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+import com.github.benmanes.caffeine.cache.Cache;
+
+import eu.xfsc.fc.core.exception.VerificationException;
+import foundation.identity.did.DIDDocument;
+import lombok.extern.slf4j.Slf4j;
+import uniresolver.ResolutionException;
+import uniresolver.UniResolver;
+import uniresolver.result.ResolveResult;
+
+@Slf4j
+@Component
+public class DidDocumentResolver {
+
+	private static final Map<String, Object> RESOLVE_OPTIONS = Map.of("accept", "application/did+ld+json");
+	
+	@Autowired
+	private UniResolver resolver;
+	@Autowired
+	private Cache<String, DIDDocument> didDocumentCache;
+
+	public String resolveDocumentContent(String did) {
+		DIDDocument diDoc = resolveDidDocument(did);
+		return diDoc.toJson();
+	}
+	
+	public DIDDocument resolveDidDocument(String did) {
+		log.debug("resolveDidDocument.enter; got did to resolve: {}", did);
+		DIDDocument diDoc = didDocumentCache.getIfPresent(did);
+		boolean cached = true;
+		if (diDoc == null) {
+			cached = false;
+			ResolveResult didResult;
+			try {
+				didResult = resolver.resolve(did); //, RESOLVE_OPTIONS);
+				log.trace("resolveDid; resolved to: {}", didResult.toJson());
+			} catch (ResolutionException ex) {
+				log.warn("resolveDidDocument; error processing did {}", did, ex);
+				throw new VerificationException(ex);
+			}
+			if (didResult.isErrorResult()) {
+				throw new VerificationException(didResult.getErrorDetail());
+			}
+
+			//String docStream = didResult.getDidDocumentStreamAsString();
+			//log.trace("resolveDidDocument; doc stream is: {}", docStream);
+			//diDoc = DIDDocument.fromJson(docStream);
+			diDoc = didResult.getDidDocument();
+			didDocumentCache.put(did, diDoc);
+		}
+		log.debug("resolveDidDocument.exit; returning doc: {}, from cache: {}", diDoc, cached);
+		return diDoc;
+	}
+	
+	
+}

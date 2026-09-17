@@ -1,0 +1,16 @@
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix ex: <http://www.example.com/> .
+ex:animals rdf:type skos:ConceptScheme;
+    .
+ex:cat rdf:type skos:ConceptScheme;
+  skos:prefLabel "cat"@en;
+  skos:prefLabel "Katze"@de;
+  skos:altLabel "kitten"@en;
+  skos:hiddenLabel "katze"@de;
+  skos:definition "A small carnivorous mammal with soft fur, a short snout, and retractable claws."@en;
+  skos:editorialNote "Review this term after merge."@en;
+  skos:changeNote "Added hidden label."@en.
+
+  ex:dog rdf:type ex:animal;
+    rdfs:label "dog".

@@ -1,0 +1,232 @@
+management:
+  endpoint:
+    health:
+      show-details: when_authorized
+  endpoints:
+    web:
+      exposure:
+        include: health, info, graph-rebuild
+
+server:
+  port: 8081
+  tomcat:
+    mbeanregistry:
+      enabled: true
+    threads:
+      max: 200
+      min-spare: 20
+  shutdown: graceful
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+  application:
+    name: federated-catalogue-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/postgres
+    username: postgres
+    password: postgres
+    platform: postgresql
+    hikari:
+      connectionTimeout: 30000
+      idleTimeout: 600000
+      maxLifetime: 1800000
+      minimumIdle: 8
+      maximumPoolSize: 128
+  liquibase:
+    change-log: classpath:/liquibase/master-changelog.xml
+  main:
+    allow-bean-definition-overriding: true    
+  mvc:
+    log-request-details: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://key-server:8080/realms/${keycloak.realm}
+  #          jwk-set-uri: http://key-server:8080/realms/${keycloak.realm}/protocol/openid-connect/certs
+  threads:
+    virtual:
+      enabled: true
+  transaction:
+    default-timeout: 10
+
+scheduler:
+  asset:
+    cron:
+      expression: 0 1 0 * * *
+  schema:
+    init-delay: 10000
+
+openapi:
+  gaiaXCatalogue:
+    base-path: ""
+
+springdoc:
+  api-docs:
+    path: /api/docs
+    enabled: true
+
+keycloak:
+  auth-server-url: http://key-server:8080
+  realm: ${KEYCLOAK_REALM:federated-catalogue-realm}
+  resource: federated-catalogue
+  credentials:
+    secret: ${KEYCLOAK_CREDENTIALS_SECRET:}
+
+datastore:
+  file-path: target
+
+admin:
+  dashboard:
+    keycloak-auth-server-url: ${keycloak.auth-server-url}
+    keycloak-realm: ${keycloak.realm}
+    keycloak-admin-console-url: ${keycloak.admin-console-url:}
+    file-store-path: ${datastore.file-path}
+
+graphstore:
+  # Cold-boot fallback only. The active backend is resolved at startup by
+  # RoutingGraphStore: admin_config[graphstore.preferred.backend] first, this value
+  # second, NONE last. The admin "Switch Backend" action performs a live in-process
+  # switch and updates the persisted preference for subsequent boots.
+  impl: fuseki #neo4j, none
+  auto-rebuild-on-empty: false
+  # Per-backend URIs. Both are read at runtime; only the URI for the active backend
+  # opens a driver. The pre-flight probe in GraphDatabaseAdminService reads the other
+  # backend's URI to verify reachability before persisting a switch.
+  neo4j:
+    uri: bolt://localhost:7687
+  fuseki:
+    uri: http://localhost:3030/ds
+  # Deprecated single URI — kept as a fallback for either adapter. New deployments
+  # should set the per-backend URIs above.
+  uri: ${graphstore.fuseki.uri}
+  user: neo4j
+  password: neo12345
+  timeout-marker: The transaction has not completed within the timeout specified
+
+publisher:
+#  impl: none #nats
+#  url: nats://localhost:4222 
+  subject: fc.asset
+#  instance: http://localhost:8081
+  send-content: false
+  impl: none
+  instance: http://localhost:8081
+  url: https://ces-v1.lab.gaia-x.eu
+  comp-url: https://compliance.lab.gaia-x.eu/v1/api
+
+subscriber:
+#  impl: none
+#  url: nats://localhost:4222
+#  subject: fc.asset.*
+#  instance: http://localhost:8082
+#  stream: fc-asset 
+#  queue: asset-processor
+#  group: asset-group
+  impl: none #ces
+  instance: http://localhost:8081
+  url: https://ces-v1.lab.gaia-x.eu 
+  page-size: 20
+  fixed-rate: 30s
+  verify:
+    semantics: true
+    vp-signature: false
+    vc-signature: false
+    integrity: true
+
+federated-catalogue:
+  scope: runtime
+  rdf:
+    content-types:
+      - application/ld+json
+      - application/vc+ld+json
+      - application/vp+ld+json
+      - application/vc+jwt
+      - application/vp+jwt
+      # non-credential RDF formats (claim extraction only; schema validation is not supported)
+      - text/turtle
+      - application/n-triples
+      - application/rdf+xml
+  validation:
+    max-assets-per-request: 20  # Maximum number of asset IDs allowed in a single validateAssets request
+  assets:
+    human-readable-content-types:
+      - text/*
+      - image/*
+      - audio/*
+      - video/*
+      - application/pdf
+      - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      - application/json
+      - application/ld+json
+      - application/xml
+      - application/yaml
+      - application/x-yaml
+  file-store:
+    cached: true
+    cache-size: 128
+    schema:
+      location: schemaFiles        # RDF schema definitions used for asset validation
+    asset:
+      location: assetFiles         # Non-RDF file content (PDFs, images, binaries)
+    context-cache:
+      location: contextCacheFiles  # Cached JSON-LD context documents
+  query:
+    partners:
+    self: "http://localhost:${server.port}"
+  # Comma-separated list of trust framework families to enable at startup.
+  # Use the family name declared in the bundle's framework.yaml (e.g. "gaia-x").
+  # Env: FEDERATED_CATALOGUE_ENABLED_TRUST_FRAMEWORKS=gaia-x
+  # Per-framework verification config (e.g. trust anchor URL) lives in the bundle, not here.
+  enabled-trust-frameworks: ""
+  trust-frameworks:
+    # Path to a directory of filesystem bundle subdirectories that override (by id) or extend the classpath bundles.
+    # Filesystem bundles with a matching id replace the classpath bundle; new ids are appended.
+    # Env: FEDERATED_CATALOGUE_TRUST_FRAMEWORKS_OVERRIDE_PATH=/path/to/trustframeworks
+    override-path: "${FEDERATED_CATALOGUE_TRUST_FRAMEWORKS_OVERRIDE_PATH:}"
+  verification:
+    http-timeout: 3000
+
+    # Toggle interactions are documented in arc42 chapter 5
+    # (Verification toggle interactions). Each flag below sets one independent
+    # gate; combine carefully.
+    # VP/VC envelope semantic checks — 422 on violation.
+    semantics: true
+    vp-signature: false
+    vc-signature: false
+    signature-verifier: uni-res #local
+    did: 
+      base-url: "https://dev.uniresolver.io/1.0" #/identifiers/
+      cache:
+        size: 100
+        timeout: 1H
+    doc-loader:
+      additional-context:
+        # Maps JSON-LD context URLs to fetch URLs. Format: '[<context-url>]: <fetch-url>'
+        # The square brackets around the key are required YAML quoting for URLs containing '#' or special chars.
+        # Each entry redirects a context URL the document loader would normally fetch remotely
+        # to a different (e.g. local, cached, or versioned) URL instead.
+        '[https://registry.lab.gaia-x.eu/development/api/trusted-shape-registry/v1/shapes/jsonld/trustframework#]': https://registry.lab.gaia-x.eu/development/api/trusted-shape-registry/v1/shapes/jsonld/trustframework#
+        '[https://registry.lab.gaia-x.eu/v1/api/trusted-shape-registry/v1/shapes/jsonld/trustframework#]': https://registry.lab.gaia-x.eu/v1/api/trusted-shape-registry/v1/shapes/jsonld/trustframework#
+        '[https://w3id.org/gaia-x/2511#]': https://registry.lab.gaia-x.eu/development/context/2511
+      cache-size: 500
+      cache-timeout: 24H
+      enable-file: true
+      enable-http: true
+      enable-local-cache: false
+    protected-namespace:
+      namespace: "https://projects.eclipse.org/projects/technology.xfsc/federated-catalogue/meta#"
+      prefix: "fcmeta"
+
+logging:
+  level:
+    root: INFO
+    eu.xfsc.fc: DEBUG
+#    org.neo4j.driver: DEBUG
+#    org.springframework: DEBUG
+    org.springframework.web: DEBUG #INFO
+#    org.springframework.security: DEBUG 
+

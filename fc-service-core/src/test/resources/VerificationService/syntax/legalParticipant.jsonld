@@ -1,0 +1,32 @@
+{
+  "@context": "https://www.w3.org/ns/credentials/v2",
+  "type": "VerifiablePresentation",
+  "verifiableCredential": [
+    {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        {"gx": "https://w3id.org/gaia-x/2511#", "vcard": "http://www.w3.org/2006/vcard/ns#"}
+      ],
+      "type": ["VerifiableCredential"],
+      "id": "https://wizard.lab.gaia-x.eu/api/credentials/legalPerson-2511",
+      "issuer": "did:web:wizard.lab.gaia-x.eu",
+      "validFrom": "2024-03-15T12:40:58.486Z",
+      "credentialSubject": {
+        "id": "did:web:wizard.lab.gaia-x.eu:participant",
+        "@type": "gx:LegalPerson",
+        "gx:legalAddress": {
+          "@type": "gx:Address",
+          "gx:countryCode": "DE"
+        },
+        "gx:headquartersAddress": {
+          "@type": "gx:Address",
+          "gx:countryCode": "DE"
+        },
+        "gx:registrationNumber": {
+          "@type": "gx:RegistrationNumber",
+          "gx:local": "HRB 12345"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "@context": {
+    "ids": "https://w3id.org/idsa/core/",
+    "owl": "http://www.w3.org/2002/07/owl#",
+    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "schema": "http://schema.org/",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "gx": "https://w3id.org/gaia-x/2511#",
+    "ex": "http://example.org/"
+  },
+  "@id": "ex:DataCenter",
+  "@type": "gx:PhysicalResource",
+
+  "gx:locationAddress": ["''52° 31' 12.0288 N, 13° 24' 17.8344 E"]
+}

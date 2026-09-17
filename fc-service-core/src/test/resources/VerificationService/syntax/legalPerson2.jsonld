@@ -1,0 +1,39 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2"
+  ],
+  "@id": "http://example.edu/verifiablePresentation/self-description1",
+  "type": [
+    "VerifiablePresentation"
+  ],
+  "verifiableCredential": [
+    {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        {"gx": "https://w3id.org/gaia-x/2511#", "vcard": "http://www.w3.org/2006/vcard/ns#"}
+      ],
+      "@id": "https://www.example.org/legalPerson.json",
+      "@type": [
+        "VerifiableCredential"
+      ],
+      "issuer": "http://gaiax.de",
+      "validFrom": "2022-10-19T18:48:09Z",
+      "credentialSubject": {
+        "@id": "http://gaiax.de",
+        "@type": "gx:LegalPerson",
+        "gx:legalAddress": {
+          "@type": "gx:Address",
+          "gx:countryCode": "DE"
+        },
+        "gx:headquartersAddress": {
+          "@type": "gx:Address",
+          "gx:countryCode": "DE"
+        },
+        "gx:registrationNumber": {
+          "@type": "gx:RegistrationNumber",
+          "gx:local": "HRB 12345"
+        }
+      }
+    }
+  ]
+}

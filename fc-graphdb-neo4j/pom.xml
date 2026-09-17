@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <groupId>eu.xfsc.cat</groupId>
+        <artifactId>fc-service</artifactId>
+        <version>1.0.0.local</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>fc-graphdb-neo4j</artifactId>
+    <version>${revision}</version>
+    <packaging>jar</packaging>
+    <name>fc-graphdb-neo4j</name>
+    <description>Eclipse XFSC Federated Catalogue graph DB: Neo4j implementation</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>eu.xfsc.cat</groupId>
+            <artifactId>fc-service-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>eu.xfsc.cat</groupId>
+            <artifactId>fc-service-api</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-neo4j</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.neo4j.driver</groupId>
+            <artifactId>neo4j-java-driver</artifactId>
+        </dependency>
+
+        <!-- Must be declared before neosemantics: neosemantics is a fat-jar that bundles old
+             copies of commons-lang3 and commons-io, lacking newer methods (e.g.
+             BasicThreadFactory.builder(), called by Jena's AlarmClock; SystemProperties
+             .getUserName(String); IOUtils.skip(InputStream, long, Supplier)). Without these
+             explicit declarations the shaded versions win classpath order and every
+             embedded-DB @SpringBootTest fails at context load with NoSuchMethodError.
+             fc-service-server carries the same declarations for the same reason. -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+        </dependency>
+
+        <!-- Embedded Neo4j, for tests only: see the scope note in the parent POM. -->
+        <dependency>
+            <groupId>org.neo4j</groupId>
+            <artifactId>neosemantics</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.neo4j.procedure</groupId>
+            <artifactId>apoc-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.neo4j.driver</groupId>
+            <artifactId>neo4j-java-driver-test-harness-spring-boot-autoconfigure</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.neo4j.test</groupId>
+            <artifactId>neo4j-harness</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.zonky.test</groupId>
+            <artifactId>embedded-postgres</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.zonky.test</groupId>
+            <artifactId>embedded-database-spring-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Publishes the embedded-Neo4j test configuration for downstream modules' tests,
+                 so it does not have to live in src/main and drag the GPL-licensed embedded
+                 server into the distributed artifacts. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>test-jar</id>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

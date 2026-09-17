@@ -1,0 +1,231 @@
+package eu.xfsc.fc.server.controller;
+
+/*-
+ * ---license-start
+ * fc-service-server
+ * ---
+ * Copyright (c) 2022 - 2026 Contributors to the Eclipse Foundation
+ * ---
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License, Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ * ---license-end
+ */
+
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import eu.xfsc.fc.api.generated.model.Error;
+import eu.xfsc.fc.api.generated.model.VerificationResult;
+import eu.xfsc.fc.core.service.schemastore.SchemaStore;
+import io.zonky.test.db.AutoConfigureEmbeddedDatabase;
+import io.zonky.test.db.AutoConfigureEmbeddedDatabase.DatabaseProvider;
+
+import static eu.xfsc.fc.server.helper.FileReaderHelper.getMockFileDataAsString;
+import static eu.xfsc.fc.server.util.TestUtil.getAccessor;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.time.Instant;
+
+// require-base-class defaults to false (caller-only). Tests expecting rejection for
+// unknown-type credentials pass requireBaseClass=true via the query parameter.
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@AutoConfigureEmbeddedDatabase(provider = DatabaseProvider.ZONKY)
+public class VerificationControllerTest {
+
+  @Autowired
+  private WebApplicationContext context;
+
+  @Autowired
+  private ObjectMapper objectMapper;
+
+  @Autowired
+  private MockMvc mockMvc;
+
+  @Autowired
+  private SchemaStore schemaStore;
+
+  @BeforeAll
+  public void setup() {
+    mockMvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
+    // Loads the production ontologies from defaultschema/ontology/ (idempotent — skips if already loaded
+    // by CatalogueServerScheduler). Needed for rdfs:subClassOf type resolution (e.g. LegalPerson → PARTICIPANT).
+    schemaStore.initializeDefaultSchemas();
+  }
+
+  @Test
+  public void getVerification_unauthenticated_isRejected() throws Exception {
+    mockMvc.perform(MockMvcRequestBuilders.get("/verification")
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
+            .with(csrf()))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  public void getVerifyPageShouldReturnSuccessResponse() throws Exception {
+    mockMvc.perform(MockMvcRequestBuilders.get("/verification")
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
+        	.with(csrf()).with(jwt()))
+            .andExpect(status().isOk())
+            .andExpect(header().stringValues("Content-Type", "text/html"));
+  }
+
+  @Test
+  public void verifyParticipantShouldReturnSuccessResponse() throws Exception {
+    String json = getMockFileDataAsString("default-participant.json");
+    String response = mockMvc.perform(MockMvcRequestBuilders.post("/verification")
+            // fixture signed by external GXDCH key without @context — cannot re-sign; skip sig verification
+            .queryParam("verifyVPSignature", "false")
+            .queryParam("verifyVCSignature", "false")
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
+            .content(json)
+        	.with(csrf()).with(jwt()))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    VerificationResult partResult = objectMapper.readValue(response, VerificationResult.class);
+    assertEquals("did:example:issuer", partResult.getIssuer());
+    assertEquals(Instant.parse("2010-01-01T19:23:24Z"), partResult.getIssuedDateTime());
+  }
+
+  @Test
+  public void verifyNoProofsShouldReturnUnprocessibleEntity() throws Exception {
+    String json = getMockFileDataAsString("participant_without_proofs.json");
+    mockMvc.perform(MockMvcRequestBuilders.post("/verification")
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
+            .content(json)
+        	.with(csrf()).with(jwt()))
+            .andExpect(status().isUnprocessableEntity());
+  }
+
+  @Test
+  public void verifyNoProofsNoSignsShouldReturnSuccessResponse() throws Exception {
+    String json = getMockFileDataAsString("participant_without_proofs.json");
+    mockMvc.perform(MockMvcRequestBuilders.post("/verification")
+            .queryParam("verifySemantics", "false")
+            .queryParam("verifyVPSignature", "false")
+            .queryParam("verifyVCSignature", "false")
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
+            .content(json)
+        	.with(csrf()).with(jwt()))
+            .andExpect(status().isOk());
+  }
+
+  @Test
+  public void verifyCredentialNoCSShouldReturnUnprocessibleEntity() throws Exception {
+    String json = getMockFileDataAsString("credential-without-credential-subject.json");
+    String response = mockMvc.perform(MockMvcRequestBuilders.post("/verification")
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
+            .content(json)
+        	.with(csrf()).with(jwt()))
+            .andExpect(status().isUnprocessableEntity())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    Error error = objectMapper.readValue(response, Error.class);
+    assertEquals("verification_error", error.getCode());
+    assertTrue(error.getMessage().startsWith("Semantic Errors:"), "Message is: " + error.getMessage());
+    //assertTrue(error.getMessage().contains("no proper CredentialSubject found"), "Message is: " + error.getMessage());
+    assertTrue(error.getMessage().contains("VerifiableCredential[0] must contain 'credentialSubject' property"), "Message is: " + error.getMessage());
+  }
+
+  @Test
+  @Disabled("I don't see where this test is supposed to succeed")
+  public void verifyCredentialNoCSNoSemanticsShouldReturnSuccessResponse() throws Exception {
+    String json = getMockFileDataAsString("credential-without-credential-subject.json");
+    mockMvc.perform(MockMvcRequestBuilders.post("/verification")
+            .queryParam("verifySemantics", "false")
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
+            .content(json)
+        	.with(csrf()).with(jwt()))
+            .andExpect(status().isOk());
+  }
+
+  private static final String UNKNOWN_TYPE_VP = """
+      {
+        "@context": ["https://www.w3.org/ns/credentials/v2"],
+        "type": "VerifiablePresentation",
+        "verifiableCredential": [{
+          "@context": ["https://www.w3.org/ns/credentials/v2"],
+          "id": "http://example.edu/credentials/9999",
+          "type": "VerifiableCredential",
+          "issuer": "did:example:issuer",
+          "validFrom": "2024-01-01T00:00:00Z",
+          "credentialSubject": {
+            "@id": "did:example:subject",
+            "@type": "https://example.com/UnknownType123"
+          }
+        }]
+      }
+      """;
+
+  @Test
+  public void verify_credentialWithUnresolvableType_returnsBadRequest() throws Exception {
+    mockMvc.perform(MockMvcRequestBuilders.post("/verification")
+            .queryParam("verifySemantics", "false")
+            .queryParam("verifyVPSignature", "false")
+            .queryParam("verifyVCSignature", "false")
+            .queryParam("requireBaseClass", "true")
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
+            .content(UNKNOWN_TYPE_VP)
+            .with(csrf()).with(jwt()))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  public void verify_unresolvableTypeError_responseContainsActiveBundleInfo() throws Exception {
+    String response = mockMvc.perform(MockMvcRequestBuilders.post("/verification")
+            .queryParam("verifySemantics", "false")
+            .queryParam("verifyVPSignature", "false")
+            .queryParam("verifyVCSignature", "false")
+            .queryParam("requireBaseClass", "true")
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
+            .content(UNKNOWN_TYPE_VP)
+            .with(csrf()).with(jwt()))
+        .andExpect(status().isBadRequest())
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+    Error error = objectMapper.readValue(response, Error.class);
+    assertTrue(error.getMessage().contains("gaia-x-2511"),
+        "Expected active bundle ID 'gaia-x-2511' in error message: " + error.getMessage());
+  }
+
+}

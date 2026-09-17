@@ -1,0 +1,145 @@
+package eu.xfsc.fc.server.service;
+
+/*-
+ * ---license-start
+ * fc-service-server
+ * ---
+ * Copyright (c) 2022 - 2026 Contributors to the Eclipse Foundation
+ * ---
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License, Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ * ---license-end
+ */
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Service;
+
+import eu.xfsc.fc.api.generated.model.OntologyImpactList;
+import eu.xfsc.fc.api.generated.model.SchemaModulePatch;
+import eu.xfsc.fc.api.generated.model.SchemaValidationModule;
+import eu.xfsc.fc.api.generated.model.SchemaValidationStatus;
+import eu.xfsc.fc.core.dao.adminconfig.AdminConfigEntry;
+import eu.xfsc.fc.core.dao.adminconfig.AdminConfigRepository;
+import eu.xfsc.fc.core.exception.ClientException;
+import eu.xfsc.fc.core.service.schemastore.SchemaStore;
+import eu.xfsc.fc.core.service.schemastore.SchemaStore.SchemaType;
+import eu.xfsc.fc.core.service.verification.OntologyImpactService;
+import eu.xfsc.fc.core.service.verification.SchemaModuleConfigService;
+import eu.xfsc.fc.core.service.verification.SchemaModuleType;
+import eu.xfsc.fc.server.generated.controller.AdminSchemaValidationApiDelegate;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Service for schema validation module administration endpoints.
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class SchemaValidationAdminService implements AdminSchemaValidationApiDelegate {
+
+  private static final String CONFIG_PREFIX = "schema.module.";
+  private static final String CONFIG_SUFFIX = ".enabled";
+  private static final Set<String> VALID_MODULE_TYPES = Set.of(
+      SchemaModuleType.SHACL, SchemaModuleType.JSON_SCHEMA,
+      SchemaModuleType.XML_SCHEMA, SchemaModuleType.OWL);
+
+  private static final Map<String, String> MODULE_NAMES = Map.of(
+      SchemaModuleType.SHACL, "SHACL Shapes",
+      SchemaModuleType.JSON_SCHEMA, "JSON Schema",
+      SchemaModuleType.XML_SCHEMA, "XML Schema",
+      SchemaModuleType.OWL, "OWL Ontologies");
+
+  private static final Map<String, String> MODULE_DESCRIPTIONS = Map.of(
+      SchemaModuleType.SHACL, "SHACL shape graphs for RDF credential validation",
+      SchemaModuleType.JSON_SCHEMA, "JSON Schema for non-RDF JSON asset validation",
+      SchemaModuleType.XML_SCHEMA, "XML Schema for non-RDF XML asset validation",
+      SchemaModuleType.OWL, "OWL ontologies and SKOS vocabularies");
+
+  /** Maps UI module types to SchemaStore.SchemaType values for counting. */
+  private static final Map<String, List<SchemaType>> MODULE_SCHEMA_TYPES = Map.of(
+      SchemaModuleType.SHACL, List.of(SchemaType.SHAPE),
+      SchemaModuleType.JSON_SCHEMA, List.of(SchemaType.JSON),
+      SchemaModuleType.XML_SCHEMA, List.of(SchemaType.XML),
+      SchemaModuleType.OWL, List.of(SchemaType.ONTOLOGY, SchemaType.VOCABULARY));
+
+  private final AdminConfigRepository adminConfigRepository;
+  private final SchemaStore schemaStore;
+  private final OntologyImpactService ontologyImpactService;
+
+  @Override
+  public ResponseEntity<SchemaValidationStatus> getSchemaValidationStatus() {
+    Map<SchemaType, List<String>> schemas = schemaStore.getSchemaList();
+    Map<String, String> moduleConfigs = adminConfigRepository.getByPrefix(CONFIG_PREFIX);
+
+    List<SchemaValidationModule> modules = new ArrayList<>();
+    long totalCount = 0;
+
+    for (String type : VALID_MODULE_TYPES) {
+      SchemaValidationModule module = new SchemaValidationModule();
+      module.setType(type);
+      module.setName(MODULE_NAMES.get(type));
+      module.setDescription(MODULE_DESCRIPTIONS.get(type));
+
+      long count = MODULE_SCHEMA_TYPES.get(type).stream()
+          .mapToLong(st -> schemas.getOrDefault(st, List.of()).size())
+          .sum();
+      module.setSchemaCount(count);
+      totalCount += count;
+
+      String configKey = CONFIG_PREFIX + type + CONFIG_SUFFIX;
+      String enabledValue = moduleConfigs.getOrDefault(configKey, "true");
+      module.setEnabled(Boolean.parseBoolean(enabledValue));
+
+      modules.add(module);
+    }
+
+    SchemaValidationStatus status = new SchemaValidationStatus();
+    status.setTotalSchemaCount(totalCount);
+    status.setModules(modules);
+    return ResponseEntity.ok(status);
+  }
+
+  /**
+   * Applies a merge-patch to the identified schema validation module. Only non-null patch fields
+   * are applied. Returns 400 if the module type is not one of the four valid values.
+   *
+   * @param type  module type (SHACL, JSON_SCHEMA, XML_SCHEMA, OWL)
+   * @param patch fields to update
+   * @return 200 on success
+   */
+  @Override
+  @CacheEvict(value = SchemaModuleConfigService.CACHE_NAME, allEntries = true)
+  public ResponseEntity<Void> patchSchemaModule(String type, SchemaModulePatch patch) {
+    if (!VALID_MODULE_TYPES.contains(type)) {
+      throw new ClientException("Invalid module type: " + type
+          + ". Valid types: " + String.join(", ", VALID_MODULE_TYPES));
+    }
+    if (patch.getEnabled() == null) {
+      throw new ClientException("Patch body must contain at least one field");
+    }
+    String key = CONFIG_PREFIX + type + CONFIG_SUFFIX;
+    AdminConfigEntry entry = adminConfigRepository.findById(key)
+        .orElse(new AdminConfigEntry(key, null, null));
+    entry.setConfigValue(String.valueOf(patch.getEnabled()));
+    adminConfigRepository.save(entry);
+    return ResponseEntity.ok().build();
+  }
+
+  @Override
+  public ResponseEntity<OntologyImpactList> getOntologyImpact() {
+    return ResponseEntity.ok(ontologyImpactService.computeImpact());
+  }
+}

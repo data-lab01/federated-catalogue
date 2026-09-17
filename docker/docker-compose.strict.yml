@@ -1,0 +1,35 @@
+###
+# ---license-start
+# fc-service
+# ---
+# Copyright (c) 2022 - 2026 Contributors to the Eclipse Foundation
+# ---
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Apache License, Version 2.0 which is available at
+# https://www.apache.org/licenses/LICENSE-2.0.
+#
+# SPDX-License-Identifier: Apache-2.0
+# ---license-end
+###
+
+# Strict verification overlay — turns ON the signature verification flags.
+#
+# Per ADR-003, this overlay overrides *only* the env vars that differ from the base compose.
+# The mock trust framework, the compliance-mock WireMock stub, and the trustframeworks
+# override mount now live in the base docker-compose.yml (they are config-agnostic and used
+# by @cfg.default discovery/compliance scenarios), so they are NOT repeated here.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.strict.yml --env-file dev.env up
+#   ./dev.sh strict
+#
+# See: cat-integration-tests/docs/adr/003-interim-two-config-test-strategy.md
+
+services:
+  server:
+    environment:
+      FEDERATED_CATALOGUE_VERIFICATION_VP_SIGNATURE: "true"
+      FEDERATED_CATALOGUE_VERIFICATION_VC_SIGNATURE: "true"

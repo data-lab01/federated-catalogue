@@ -1,0 +1,71 @@
+###
+# ---license-start
+# fc-service
+# ---
+# Copyright (c) 2022 - 2026 Contributors to the Eclipse Foundation
+# ---
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Apache License, Version 2.0 which is available at
+# https://www.apache.org/licenses/LICENSE-2.0.
+#
+# SPDX-License-Identifier: Apache-2.0
+# ---license-end
+###
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "fc-service.fuseki.fullname" . }}
+  labels:
+    {{- include "fc-service.fuseki.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "fc-service.fuseki.fullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fc-service.fuseki.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fc-service.fuseki.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        fsGroup: 1000
+      initContainers:
+      - name: init-tdb-dir
+        image: {{ .Values.fuseki.image.repository }}:{{ .Values.fuseki.image.tag }}
+        command: ["sh", "-c", "mkdir -p /fuseki/databases/{{ .Values.fuseki.dataset }}"]
+        volumeMounts:
+        - name: fuseki-data
+          mountPath: /fuseki/databases
+      containers:
+      - name: fuseki
+        image: {{ .Values.fuseki.image.repository }}:{{ .Values.fuseki.image.tag }}
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3030
+          name: http
+        env:
+        - name: JAVA_OPTIONS
+          value: {{ .Values.fuseki.javaOptions | quote }}
+        args:
+        - "--tdb2"
+        - "--loc=/fuseki/databases/{{ .Values.fuseki.dataset }}"
+        - "--update"
+        - "/{{ .Values.fuseki.dataset }}"
+        volumeMounts:
+        - name: fuseki-data
+          mountPath: /fuseki/databases
+        resources:
+          {{- toYaml .Values.fuseki.resources | nindent 10 }}
+  volumeClaimTemplates:
+  - metadata:
+      name: fuseki-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: {{ .Values.fuseki.persistence.size }}

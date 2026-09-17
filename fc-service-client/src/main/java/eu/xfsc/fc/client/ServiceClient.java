@@ -1,0 +1,283 @@
+package eu.xfsc.fc.client;
+
+/*-
+ * ---license-start
+ * fc-service-client
+ * ---
+ * Copyright (c) 2022 - 2026 Contributors to the Eclipse Foundation
+ * ---
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License, Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ * ---license-end
+ */
+
+import static org.springframework.security.oauth2.client.web.reactive.function.client.ServerOAuth2AuthorizedClientExchangeFilterFunction.oauth2AuthorizedClient;
+
+import java.util.Map;
+
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.codec.json.Jackson2JsonDecoder;
+import org.springframework.http.codec.json.Jackson2JsonEncoder;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
+import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.util.UriBuilder;
+
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import eu.xfsc.fc.api.FcMediaTypes;
+
+import lombok.extern.slf4j.Slf4j;
+import reactor.core.publisher.Mono;
+import java.net.URI;
+
+@Slf4j
+public abstract class ServiceClient {
+
+    protected final String baseUrl;
+    protected final ObjectMapper mapper;
+    protected final WebClient client;
+
+    public ServiceClient(String baseUrl, String jwt) {
+        this.baseUrl = baseUrl;
+        mapper = new ObjectMapper()
+            .findAndRegisterModules()
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+        WebClient.Builder builder = WebClient.builder()
+            .baseUrl(baseUrl)
+            .codecs(configurer -> {
+                configurer.defaultCodecs().jackson2JsonEncoder(new Jackson2JsonEncoder(mapper, MediaType.APPLICATION_JSON));
+                configurer.defaultCodecs().jackson2JsonDecoder(new Jackson2JsonDecoder(mapper, MediaType.APPLICATION_JSON));
+            })
+            .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+            .filter(errorPropagationFilter());
+      if (jwt != null) {
+        builder = builder.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + jwt);
+      }
+      this.client = builder.build();
+    }
+
+  /**
+   * Exchange filter that converts any 4xx/5xx response into an
+   * {@link ExternalServiceException} carrying the parsed response body. Exposed so
+   * test {@code WebClient}s can wire the same body-preserving error handling that the
+   * production constructor uses.
+   */
+  public static ExchangeFilterFunction errorPropagationFilter() {
+    return ExchangeFilterFunction.ofResponseProcessor(response -> {
+      if (response.statusCode().isError()) {
+        return response.bodyToMono(Map.class)
+            .flatMap(map -> Mono.error(new ExternalServiceException(response.statusCode(), map)));
+      }
+      return Mono.just(response);
+    });
+    }
+
+    public ServiceClient(String baseUrl, WebClient client) {
+        this.baseUrl = baseUrl;
+        this.client = client;
+        this.mapper = new ObjectMapper()
+                .findAndRegisterModules()
+                .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+    }
+
+    public String getUrl() {
+        return this.baseUrl;
+    }
+
+    protected URI buildUri(UriBuilder uriBuilder, String path, Map<String, Object> pathParams, Map<String, Object> queryParams) {
+        UriBuilder builder = uriBuilder.path(path);
+        if (queryParams != null && !queryParams.isEmpty()) {
+            queryParams.forEach(builder::queryParam);
+        }
+        return builder.build(pathParams);
+    }
+
+    protected Map<String, Object> buildPagingParams(int offset, int limit) {
+        if (limit == 0) {
+            limit = 50;
+        }
+        return Map.of("offset", offset, "limit", limit);
+    }
+
+    protected <T> T doGet(String path, Map<String, Object> pathParams, Map<String, Object> queryParams, Class<T> reType) {
+        return client
+            .get()
+            .uri(uriBuilder -> buildUri(uriBuilder, path, pathParams, queryParams))
+            .retrieve()
+            .bodyToMono(reType)
+            .block();
+    }
+
+    protected <T> T doGet(String path, Map<String, Object> pathParams, Map<String, Object> queryParams, Class<T> reType, OAuth2AuthorizedClient authorizedClient) {
+        return client
+            .get()
+            .uri(uriBuilder -> buildUri(uriBuilder, path, pathParams, queryParams))
+            .attributes(oauth2AuthorizedClient(authorizedClient))
+            .retrieve()
+            .bodyToMono(reType)
+            .block();
+    }
+
+    protected <T> T doGet(String path, Map<String, Object> pathParams, Map<String, Object> queryParams,
+        ParameterizedTypeReference<T> responseType,
+        OAuth2AuthorizedClient authorizedClient) {
+        return client
+            .get()
+            .uri(uriBuilder -> buildUri(uriBuilder, path, pathParams, queryParams))
+            .attributes(oauth2AuthorizedClient(authorizedClient))
+            .retrieve()
+            .bodyToMono(responseType)
+            .block();
+    }
+
+    protected <T> T doPost(String path, Object body, Map<String, Object> pathParams, Map<String, Object> queryParams, Class<T> reType) {
+        return client
+            .post()
+            .uri(uriBuilder -> buildUri(uriBuilder, path, pathParams, queryParams))
+            .bodyValue(body)
+            .retrieve()
+            .bodyToMono(reType)
+            .block();
+    }
+
+    protected <T> T doPost(String path, Map<String, Object> pathParams, Map<String, Object> queryParams, Class<T> reType) {
+        return client
+            .post()
+            .uri(uriBuilder -> buildUri(uriBuilder, path, pathParams, queryParams))
+            .retrieve()
+            .bodyToMono(reType)
+            .block();
+    }
+
+    protected <T> T doPost(String path, Object body, Map<String, Object> pathParams, Map<String, Object> queryParams, Class<T> reType, OAuth2AuthorizedClient authorizedClient) {
+        return client
+            .post()
+            .uri(uriBuilder -> buildUri(uriBuilder, path, pathParams, queryParams))
+            .bodyValue(body)
+            .attributes(oauth2AuthorizedClient(authorizedClient))
+            .retrieve()
+            .bodyToMono(reType)
+            .block();
+    }
+
+    protected <T> Mono<T> doPostAsync(String path, Object body, Map<String, Object> pathParams, Map<String, Object> queryParams, Class<T> reType) {
+        return client
+            .post()
+            .uri(uriBuilder -> buildUri(uriBuilder, path, pathParams, queryParams))
+            .bodyValue(body)
+            .retrieve()
+            .bodyToMono(reType);
+    }
+
+    protected <T> Mono<T> doPostAsync(String path, Map<String, Object> pathParams, Map<String, Object> queryParams, Class<T> reType) {
+        return client
+            .post()
+            .uri(uriBuilder -> buildUri(uriBuilder, path, pathParams, queryParams))
+            .retrieve()
+            .bodyToMono(reType);
+    }
+
+    protected <T> Mono<T> doPostAsync(String path, Object body, Map<String, Object> pathParams, Map<String, Object> queryParams, Class<T> reType, OAuth2AuthorizedClient authorizedClient) {
+        return client
+            .post()
+            .uri(uriBuilder -> buildUri(uriBuilder, path, pathParams, queryParams))
+            .bodyValue(body)
+            .attributes(oauth2AuthorizedClient(authorizedClient))
+            .retrieve()
+            .bodyToMono(reType);
+    }
+
+    protected <T> T doPut(String path, Object body, Map<String, Object> pathParams, Map<String, Object> queryParams, Class<T> reType) {
+        return client
+            .put()
+            .uri(uriBuilder -> buildUri(uriBuilder, path, pathParams, queryParams))
+            .bodyValue(body)
+            .retrieve()
+            .bodyToMono(reType)
+            .block();
+    }
+
+    protected <T> T doPut(String path, Object body, Map<String, Object> pathParams, Map<String, Object> queryParams, Class<T> reType, OAuth2AuthorizedClient authorizedClient) {
+        return client
+            .put()
+            .uri(uriBuilder -> buildUri(uriBuilder, path, pathParams, queryParams))
+            .bodyValue(body)
+            .attributes(oauth2AuthorizedClient(authorizedClient))
+            .retrieve()
+            .bodyToMono(reType)
+            .block();
+    }
+
+  /**
+   * Sends a PATCH request with the given body using {@code application/merge-patch+json}.
+   *
+   * @param path       URI template (supports Spring-style path variables)
+   * @param body       request payload; serialised to JSON
+   * @param pathParams path variable substitutions
+   * @param reType     expected response body type
+   * @return deserialized response body, or {@code null} for {@code Void}
+   */
+  protected <T> T doPatch(String path, Object body, Map<String, Object> pathParams, Class<T> reType) {
+    return client
+        .patch()
+        .uri(uriBuilder -> buildUri(uriBuilder, path, pathParams, null))
+        .contentType(FcMediaTypes.MERGE_PATCH_JSON)
+        .bodyValue(body)
+        .retrieve()
+        .bodyToMono(reType)
+        .block();
+  }
+
+  /**
+   * Sends a PATCH request with the given body using {@code application/merge-patch+json},
+   * attaching the supplied OAuth2 authorized client for token propagation.
+   *
+   * @param path             URI template (supports Spring-style path variables)
+   * @param body             request payload; serialised to JSON
+   * @param pathParams       path variable substitutions
+   * @param reType           expected response body type
+   * @param authorizedClient OAuth2 client used to obtain the bearer token
+   * @return deserialized response body, or {@code null} for {@code Void}
+   */
+  protected <T> T doPatch(String path, Object body, Map<String, Object> pathParams, Class<T> reType,
+                          OAuth2AuthorizedClient authorizedClient) {
+    return client
+        .patch()
+        .uri(uriBuilder -> buildUri(uriBuilder, path, pathParams, null))
+        .contentType(FcMediaTypes.MERGE_PATCH_JSON)
+        .bodyValue(body)
+        .attributes(oauth2AuthorizedClient(authorizedClient))
+            .retrieve()
+            .bodyToMono(reType)
+            .block();
+    }
+
+    protected <T> T doDelete(String path, Map<String, Object> pathParams, Map<String, Object> queryParams, Class<T> reType) {
+        return client
+            .delete()
+            .uri(uriBuilder -> buildUri(uriBuilder, path, pathParams, queryParams))
+            .retrieve()
+            .bodyToMono(reType)
+            .block();
+    }
+
+    protected <T> T doDelete(String path, Map<String, Object> pathParams, Map<String, Object> queryParams, Class<T> reType, OAuth2AuthorizedClient authorizedClient) {
+        return client
+            .delete()
+            .uri(uriBuilder -> buildUri(uriBuilder, path, pathParams, queryParams))
+            .attributes(oauth2AuthorizedClient(authorizedClient))
+            .retrieve()
+            .bodyToMono(reType)
+            .block();
+    }
+}

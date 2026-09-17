@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: fedcat-neo4j-db
+  name: fedcat-neo4j-db
+  namespace: fedcat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fedcat-neo4j-db
+  template:
+    metadata:
+      labels:
+        app: fedcat-neo4j-db
+    spec:
+      initContainers:
+        - name: fedcat-init-plugins
+          image: "appropriate/curl:latest"
+          imagePullPolicy: "IfNotPresent"
+          volumeMounts:
+            - name: fc-neo4j-data
+              mountPath: /plugins
+          command:
+            - "/bin/sh"
+            - "-c"
+            - |
+              curl -L https://github.com/neo4j-labs/neosemantics/releases/download/4.4.0.2/neosemantics-4.4.0.2.jar -O
+              cp -R neosemantics-4.4.0.2.jar /plugins
+      containers:
+        - image: neo4j:4.4.12
+          name: fedcat-neo4j
+          imagePullPolicy: "IfNotPresent"
+          env:
+            - name: NEO4J_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: fc-neo4j-pass-secret
+                  key: auth
+            # Only n10s.* is called by the graph-store adapter (RDF import). apoc.* and gds.*
+            # are not used and are deliberately not allowlisted.
+            - name: NEO4J_dbms_security_procedures_unrestricted
+              value: "n10s.*"
+            - name: NEO4J_dbms_security_procedures_allowlist
+              value: "n10s.*"
+            - name: NEO4J_dbms_connector_http_listen__address
+              value: ':7474'
+            - name: NEO4J_dbms_connector_bolt_listen__address
+              value: ':7687'
+            - name: NEO4JLABS_PLUGINS
+              value: '["n10s"]'
+            - name: NEO4J_dbms_directories_plugins
+              value: "plugins"
+            - name: NEO4J_dbms_directories_data
+              value: "data"
+          ports:
+            - containerPort: 7474
+              name: http
+            - containerPort: 7687
+              name: bolt
+            - containerPort: 7473
+              name: https
+          volumeMounts:
+            - name: fc-neo4j-data
+              mountPath: /data
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - fedcat-postgres
+                      - fedcat-service
+              topologyKey: "kubernetes.io/hostname"
+      volumes:
+        - name: fc-neo4j-data
+          persistentVolumeClaim:
+            claimName: fedcat-neo4j-data-claim

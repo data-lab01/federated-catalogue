@@ -1,0 +1,48 @@
+package eu.xfsc.fc.graphdb.config;
+
+/*-
+ * ---license-start
+ * fc-graphdb-fuseki
+ * ---
+ * Copyright (c) 2022 - 2026 Contributors to the Eclipse Foundation
+ * ---
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License, Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ * ---license-end
+ */
+
+import org.apache.jena.rdfconnection.RDFConnection;
+import org.apache.jena.rdfconnection.RDFConnectionFuseki;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.config.ConfigurableBeanFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Scope;
+
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+@Configuration
+@ConditionalOnExpression("'${federated-catalogue.scope}'.equals('runtime')")
+public class FusekiGraphDbConfig {
+
+  @Value("${graphstore.fuseki.uri:${graphstore.uri}}")
+    private String uri;
+
+  // RDFConnectionFuseki does not open a socket at construction; the first request
+  // touches the HTTP endpoint. No connect-on-build means an unreachable Fuseki at
+  // boot does not crash the JVM in routing mode.
+    @Bean
+    @Scope(value = ConfigurableBeanFactory.SCOPE_SINGLETON)
+    public RDFConnection rdfConnection() {
+        return RDFConnectionFuseki.create().destination(uri).build();
+    }
+
+}

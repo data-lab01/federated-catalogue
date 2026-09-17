@@ -1,0 +1,42 @@
+keycloak:
+  # Pin to gaia-x so existing test fixtures (mock-data/openid-configs.json, controller mocks
+  # calling `when(keycloak.realm("gaia-x"))`) keep working without rewrites.
+  # Production default is federated-catalogue-realm.
+  realm: gaia-x
+
+federated-catalogue:
+  scope: test
+  verification:
+    # Signature verification disabled — test fixtures are JSON-LD without proofs.
+    # Tests requiring signature verification must mock JwtSignatureVerifier.
+    # This is a concern of fc-service-core and signature verification coverage is delegated.
+    vp-signature: false
+    vc-signature: false
+    # Trust Framework Configuration - disabled by default for tests
+    trust-framework:
+      gaiax:
+        enabled: false
+        trust-anchor-url: "https://registry.lab.gaia-x.eu/v1/api/trustAnchor/chain/file"
+
+  query:
+    partners:
+      - "http://localhost:9090"
+      - "http://localhost:9091"
+
+# Graph store disabled by default for tests. Tests needing a real graph store
+# must add @TestPropertySource(properties = {"graphstore.impl=neo4j"}) and
+# @Import(EmbeddedNeo4JConfig.class) to their test class.
+graphstore:
+  impl: none
+  query-timeout-in-seconds: 5
+
+scheduler:
+  asset:
+    cron:
+      expression: 0 0 0 * * *
+  schema:
+    init-delay: 1000
+
+spring:
+  liquibase:
+    contexts: test

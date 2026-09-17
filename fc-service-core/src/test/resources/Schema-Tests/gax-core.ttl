@@ -1,0 +1,92 @@
+@prefix cc: <http://creativecommons.org/ns#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix vann: <http://purl.org/vocab/vann/> .
+@prefix voaf: <http://purl.org/vocommons/voaf#> .
+@prefix void: <http://rdfs.org/ns/void#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix gx: <https://w3id.org/gaia-x/2511#> .
+
+gx: a voaf:Vocabulary,
+        owl:Ontology ;
+    rdfs:label "Gaia-X Core Ontology"@en ;
+    cc:license <http://www.apache.org/licenses/LICENSE-2.0> ;
+    dct:abstract """The Gaia-X core ontology contains the components needed to model an efficient, competitive, secure and trustworthy federation of data infrastructure and service providers.
+
+The different ontology modules can be found here:
+
+Core: <a href="https://www.w3id.org/gaia-x/core">https://www.w3id.org/gaia-x/core</a>
+
+Resource: <a href="https://www.w3id.org/gaia-x/resource">https://www.w3id.org/gaia-x/resource</a>
+
+Participant: <a href="https://www.w3id.org/gaia-x/participant">https://www.w3id.org/gaia-x/participant</a>
+
+Service Offering: <a href="https://www.w3id.org/gaia-x/service">https://www.w3id.org/gaia-x/service</a>
+
+Compliance: <a href="https://www.w3id.org/gaia-x/compliance">https://www.w3id.org/gaia-x/compliance</a>
+
+All underlying information for this documentation page can be found on the landing page of the Gaia-X Service Characteristics repository: <a href="https://gaia-x.gitlab.io/technical-committee/service-characteristics">https://gaia-x.gitlab.io/technical-committee/service-characteristics</a>.
+
+Additional information on the constraints that have to be fulfilled be the self descriptions can be found here: <a href="https://gaia-x.gitlab.io/technical-committee/service-characteristics/yaml2shacl">https://gaia-x.gitlab.io/technical-committee/service-characteristics/yaml2shacl</a>.""" ;
+    dct:contributor "Akyürek, Haydar",
+        "Bader, Sebastian",
+        "Baum, Hannes",
+        "Blanch, Josep",
+        "Frömberg, Jan",
+        "Gronlier, Pierre",
+        "Hermsen, Felix",
+        "Lange, Christoph",
+        "Langkau, Jörg",
+        "Leberecht, Markus",
+        "Meinke, Kai",
+        "Moosmann, Paul",
+        "Niessen, Thomas",
+        "Ogel, Frederic",
+        "Ottradovetz, Klaus",
+        "Qin, Chang",
+        "Rubina, Alina",
+        "Staginus, Judith",
+        "Strunk, Anja",
+        "Theissen-Lipp, Johannes" ;
+    dct:created "2021-10-18T12:00:00+01:00"^^xsd:dateTimeStamp ;
+    dct:creator "Working Group Service Characteristics" ;
+    dct:modified "2022-10-26T18:32:04+02:00"^^xsd:dateTimeStamp ;
+    dct:title "Gaia-X Core Ontology"@en ;
+    vann:preferredNamespacePrefix "gax-core" ;
+    vann:preferredNamespaceUri "https://w3id.org/gaia-x/2511#" ;
+    void:vocabulary dct:,
+        vann:,
+        voaf:,
+        void: ;
+    owl:versionInfo "22.04" .
+
+gx:aggregationOf a owl:ObjectProperty ;
+    rdfs:label "aggregation of"@en ;
+    rdfs:comment "DID of resource self-escription related to the service and that can exist independently of it.",
+        "DID of resources self-description related to the resource and that can exist independently of it." ;
+    rdfs:domain gx:Resource,
+        gx:ServiceOffering ;
+    rdfs:range gx:Resource .
+
+gx:operatedBy a owl:ObjectProperty ;
+    rdfs:label "operated by"@en ;
+    rdfs:comment "DID of resources self-description related to the resource and that can exist independently of it." ;
+    rdfs:domain gx:Resource ;
+    rdfs:range gx:Resource .
+
+gx:providedBy a owl:ObjectProperty ;
+    rdfs:label "provided by"@en ;
+    rdfs:comment "DID of participant self-descrription providing this service offering." ;
+    rdfs:domain gx:ServiceOffering ;
+    rdfs:range gx:Participant .
+
+gx:Participant a owl:Class ;
+    rdfs:label "Participant"@en .
+
+gx:ServiceOffering a owl:Class ;
+    rdfs:label "Service Offering"@en .
+
+gx:Resource a owl:Class ;
+    rdfs:label "Resource"@en .
+

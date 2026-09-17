@@ -1,0 +1,48 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    "https://w3id.org/gaia-x/2511#",
+    {
+      "schema": "https://schema.org/",
+      "vcard": "http://www.w3.org/2006/vcard/ns#"
+    }
+  ],
+  "id": "https://www.example.org/credentials/legal-person-3.json",
+  "type": [
+    "VerifiableCredential",
+    "gx:LegalPerson"
+  ],
+  "issuer": "did:web:example.org",
+  "validFrom": "2026-01-01T00:00:00Z",
+  "validUntil": "2027-01-01T00:00:00Z",
+  "credentialSubject": {
+    "id": "https://www.example.org/participants/test-issuer-3",
+    "type": "gx:LegalPerson",
+    "schema:name": "deltaDAO Munich GmbH",
+    "schema:description": "Bavarian subsidiary used for queries that traverse the parent-organization relationship.",
+    "gx:registrationNumber": {
+      "id": "https://www.example.org/participants/test-issuer-3/registration"
+    },
+    "gx:subOrganisationOf": {
+      "id": "https://www.example.org/participants/test-issuer-1"
+    },
+    "gx:legalAddress": {
+      "type": "gx:Address",
+      "gx:countryCode": "DE",
+      "gx:countryName": "Germany",
+      "vcard:region": "Bayern",
+      "vcard:locality": "München",
+      "vcard:postal-code": "80331",
+      "vcard:street-address": "Marienplatz 1"
+    },
+    "gx:headquartersAddress": {
+      "type": "gx:Address",
+      "gx:countryCode": "DE",
+      "gx:countryName": "Germany",
+      "vcard:region": "Bayern",
+      "vcard:locality": "München",
+      "vcard:postal-code": "80331",
+      "vcard:street-address": "Marienplatz 1"
+    }
+  }
+}

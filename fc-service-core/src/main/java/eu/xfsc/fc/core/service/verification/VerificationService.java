@@ -1,0 +1,92 @@
+package eu.xfsc.fc.core.service.verification;
+
+/*-
+ * ---license-start
+ * fc-service-core
+ * ---
+ * Copyright (c) 2022 - 2026 Contributors to the Eclipse Foundation
+ * ---
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License, Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ * ---license-end
+ */
+
+import eu.xfsc.fc.core.exception.VerificationException;
+import eu.xfsc.fc.core.pojo.ContentAccessor;
+import eu.xfsc.fc.core.pojo.CredentialVerificationResult;
+
+import org.springframework.stereotype.Service;
+
+/**
+ * Ingest-time verification of W3C Verifiable Credentials and Presentations.
+ * Parses JSON-LD VC/VP payloads, verifies signatures, applies the protected-namespace
+ * filter, and extracts typed claims for the upload pipeline.
+ *
+ * <p>Structural validation of stored assets against stored schemas (SHACL, JSON Schema,
+ * XML Schema) is the responsibility of
+ * {@link eu.xfsc.fc.core.service.validation.AssetValidationService} and is not exposed
+ * through this interface.</p>
+ */
+@Service
+public interface VerificationService {
+
+  /**
+   * Validates the credential payload (JSON-LD format) and extracts typed metadata.
+   *
+   * @param payload ContentAccessor to credential which should be validated.
+   * @return a credential metadata validation result. If the validation fails, the reason explains the issue.
+   */
+  CredentialVerificationResult verifyCredential(ContentAccessor payload) throws VerificationException;
+
+  /**
+   * Validates the credential payload with an explicit trust-framework base-class requirement.
+   *
+   * <p>Use {@code requireBaseClass = false} for credential families that intentionally do not
+   * carry a trust-framework-recognised type — e.g. provenance credentials whose
+   * {@code credentialSubject} only declares PROV-O predicates. With the default
+   * {@code requireBaseClass = true}, an unresolvable type yields a {@link eu.xfsc.fc.core.exception.ClientException}.</p>
+   *
+   * @param payload ContentAccessor to credential which should be validated.
+   * @param requireBaseClass whether to reject the credential when its type cannot be resolved
+   *     to a base class in any active trust-framework bundle.
+   * @return a credential metadata validation result.
+   */
+  CredentialVerificationResult verifyCredential(ContentAccessor payload, boolean requireBaseClass)
+      throws VerificationException;
+
+  /**
+   * Validates the credential payload with custom verification toggles (JSON-LD format).
+   *
+   * @param payload ContentAccessor to credential which should be validated.
+   * @param verifySemantics - whether to perform semantic validation (e.g. required properties, value types)
+   * @param verifyVPSignatures - whether to perform VP signature verification (if the credential is a VP)
+   * @param verifyVCSignatures - whether to perform VC signature verification (if the credential is a VC)
+   * @return a credential metadata validation result. If the validation fails, the reason explains the issue.
+   * @throws VerificationException if the verification process encounters an error (e.g. invalid format, signature verification failure).
+   */
+  CredentialVerificationResult verifyCredential(ContentAccessor payload, boolean verifySemantics,
+		  boolean verifyVPSignatures, boolean verifyVCSignatures) throws VerificationException;
+
+  /**
+   * Validates the credential payload with all verification toggles and an explicit
+   * base-class requirement.
+   *
+   * @param payload ContentAccessor to credential which should be validated.
+   * @param verifySemantics whether to perform semantic validation
+   * @param verifyVPSignatures whether to perform VP signature verification
+   * @param verifyVCSignatures whether to perform VC signature verification
+   * @param requireBaseClass whether to reject credentials whose @type cannot be resolved
+   *     to a base class in any active trust-framework bundle
+   * @return a credential metadata validation result.
+   */
+  CredentialVerificationResult verifyCredential(ContentAccessor payload, boolean verifySemantics,
+		  boolean verifyVPSignatures, boolean verifyVCSignatures, boolean requireBaseClass)
+      throws VerificationException;
+
+}

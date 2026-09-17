@@ -1,0 +1,206 @@
+package eu.xfsc.fc.core.service.trustframework.compliance;
+
+/*-
+ * ---license-start
+ * fc-service-core
+ * ---
+ * Copyright (c) 2022 - 2026 Contributors to the Eclipse Foundation
+ * ---
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License, Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ * ---license-end
+ */
+
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+
+import java.util.Optional;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import eu.xfsc.fc.core.exception.ClientException;
+import eu.xfsc.fc.core.exception.ConflictException;
+import eu.xfsc.fc.core.exception.ServiceErrorException;
+import eu.xfsc.fc.core.exception.ServiceUnavailableException;
+import eu.xfsc.fc.core.exception.TimeoutException;
+import eu.xfsc.fc.core.service.trustframework.TrustFrameworkProfileResolver;
+import eu.xfsc.fc.core.service.trustframework.TrustFrameworkService;
+
+/**
+ * Unit tests for {@link ComplianceCheckOrchestrator}. All dependencies are mocked.
+ * No Spring context required.
+ */
+@ExtendWith(MockitoExtension.class)
+class ComplianceCheckOrchestratorTest {
+
+  private static final String PROFILE_ID = "mock-2026";
+  private static final String FAMILY_ID = "mock";
+  private static final String ASSET_ID = "https://example.com/asset-001";
+  private static final String ASSET_PAYLOAD = "test-asset-payload";
+  private static final TrustFrameworkProfileConfig MOCK_CONFIG = new TrustFrameworkProfileConfig(
+      PROFILE_ID, FAMILY_ID, "jwt-vc-compliance", "http://localhost",
+      "/api/credential-offers/standard-compliance", "loire", 30);
+
+  @Mock
+  private TrustFrameworkProfileResolver profileResolver;
+
+  @Mock
+  private TrustFrameworkService tfService;
+
+  @Mock
+  private TrustFrameworkClientRegistry clientRegistry;
+
+  @Mock
+  private TrustFrameworkClient mockClient;
+
+  private ComplianceCheckOrchestrator orchestrator;
+
+  @BeforeEach
+  void setUp() {
+    orchestrator = new ComplianceCheckOrchestrator(profileResolver, tfService, clientRegistry);
+  }
+
+  @Test
+  void check_nullFrameworkProfileId_throwsClientException() {
+    assertThrows(ClientException.class,
+        () -> orchestrator.check(ASSET_ID, null, ASSET_PAYLOAD));
+  }
+
+  @Test
+  void check_nullAssetPayload_throwsClientException() {
+    assertThrows(ClientException.class,
+        () -> orchestrator.check(ASSET_ID, PROFILE_ID, null));
+  }
+
+  @Test
+  void check_unknownProfileId_throwsClientException() {
+    when(profileResolver.getProfileConfig("unknown-id")).thenReturn(Optional.empty());
+
+    assertThrows(ClientException.class,
+        () -> orchestrator.check(ASSET_ID, "unknown-id", ASSET_PAYLOAD));
+  }
+
+  @Test
+  void check_familyDisabled_throwsConflictException() {
+    when(profileResolver.getProfileConfig(PROFILE_ID)).thenReturn(Optional.of(MOCK_CONFIG));
+    when(tfService.isEnabled(FAMILY_ID)).thenReturn(false);
+
+    assertThrows(ConflictException.class,
+        () -> orchestrator.check(ASSET_ID, PROFILE_ID, ASSET_PAYLOAD));
+  }
+
+  @Test
+  void check_clientRegistryThrowsIllegalArgument_throwsClientException() {
+    when(profileResolver.getProfileConfig(PROFILE_ID)).thenReturn(Optional.of(MOCK_CONFIG));
+    when(tfService.isEnabled(FAMILY_ID)).thenReturn(true);
+    when(clientRegistry.resolve("jwt-vc-compliance")).thenThrow(new IllegalArgumentException("unknown clientType"));
+
+    assertThrows(ClientException.class,
+        () -> orchestrator.check(ASSET_ID, PROFILE_ID, ASSET_PAYLOAD));
+  }
+
+  @Test
+  void check_familyEnabled_delegatesToClientAndReturnsOutcome() {
+    var expected = new IssuedAttestation("some-jwt", null);
+    when(profileResolver.getProfileConfig(PROFILE_ID)).thenReturn(Optional.of(MOCK_CONFIG));
+    when(tfService.isEnabled(FAMILY_ID)).thenReturn(true);
+    when(clientRegistry.resolve("jwt-vc-compliance")).thenReturn(mockClient);
+    when(mockClient.check(any(), any())).thenReturn(expected);
+
+    ComplianceCheckOutcome result = orchestrator.check(ASSET_ID, PROFILE_ID, ASSET_PAYLOAD);
+
+    assertInstanceOf(IssuedAttestation.class, result);
+  }
+
+  @Test
+  void check_credentialIdDiffersFromAssetId_delegatesToClient() {
+    // The catalogue keys an asset by its credential-subject id, which differs from a VP
+    // envelope's own 'id' claim. The orchestrator must still forward such a credential to the
+    // client — credentials destined for an external clearing house are not indexed by VP id.
+    var expected = new IssuedAttestation("cred-jwt", null);
+    when(profileResolver.getProfileConfig(PROFILE_ID)).thenReturn(Optional.of(MOCK_CONFIG));
+    when(tfService.isEnabled(FAMILY_ID)).thenReturn(true);
+    when(clientRegistry.resolve("jwt-vc-compliance")).thenReturn(mockClient);
+    when(mockClient.check(any(), any())).thenReturn(expected);
+
+    // JWT payload {"id":"urn:example:different-asset"} — differs from ASSET_ID
+    String credentialWithDifferentId =
+        "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0"
+            + ".eyJpZCI6InVybjpleGFtcGxlOmRpZmZlcmVudC1hc3NldCJ9.";
+
+    ComplianceCheckOutcome result =
+        orchestrator.check(ASSET_ID, PROFILE_ID, credentialWithDifferentId);
+
+    assertInstanceOf(IssuedAttestation.class, result);
+  }
+
+  @Test
+  void check_clientThrowsTimeoutException_propagates() {
+    when(profileResolver.getProfileConfig(PROFILE_ID)).thenReturn(Optional.of(MOCK_CONFIG));
+    when(tfService.isEnabled(FAMILY_ID)).thenReturn(true);
+    when(clientRegistry.resolve("jwt-vc-compliance")).thenReturn(mockClient);
+    when(mockClient.check(any(), any())).thenThrow(new TimeoutException("timed out"));
+
+    assertThrows(TimeoutException.class,
+        () -> orchestrator.check(ASSET_ID, PROFILE_ID, ASSET_PAYLOAD));
+  }
+
+  @Test
+  void check_clientThrowsServiceUnavailableException_propagates() {
+    when(profileResolver.getProfileConfig(PROFILE_ID)).thenReturn(Optional.of(MOCK_CONFIG));
+    when(tfService.isEnabled(FAMILY_ID)).thenReturn(true);
+    when(clientRegistry.resolve("jwt-vc-compliance")).thenReturn(mockClient);
+    when(mockClient.check(any(), any())).thenThrow(new ServiceUnavailableException("unreachable"));
+
+    assertThrows(ServiceUnavailableException.class,
+        () -> orchestrator.check(ASSET_ID, PROFILE_ID, ASSET_PAYLOAD));
+  }
+
+  @Test
+  void check_clientThrowsServiceErrorException_propagatesAsSubtype() {
+    // ServiceErrorException is a ServiceUnavailableException subtype; the multi-catch that
+    // rethrows ServiceUnavailableException unchanged must not widen it to the base type.
+    when(profileResolver.getProfileConfig(PROFILE_ID)).thenReturn(Optional.of(MOCK_CONFIG));
+    when(tfService.isEnabled(FAMILY_ID)).thenReturn(true);
+    when(clientRegistry.resolve("jwt-vc-compliance")).thenReturn(mockClient);
+    when(mockClient.check(any(), any())).thenThrow(new ServiceErrorException("server error", null));
+
+    assertThrows(ServiceErrorException.class,
+        () -> orchestrator.check(ASSET_ID, PROFILE_ID, ASSET_PAYLOAD));
+  }
+
+  @Test
+  void check_clientReturnsNull_throwsServiceUnavailableException() {
+    when(profileResolver.getProfileConfig(PROFILE_ID)).thenReturn(Optional.of(MOCK_CONFIG));
+    when(tfService.isEnabled(FAMILY_ID)).thenReturn(true);
+    when(clientRegistry.resolve("jwt-vc-compliance")).thenReturn(mockClient);
+    when(mockClient.check(any(), any())).thenReturn(null);
+
+    assertThrows(ServiceUnavailableException.class,
+        () -> orchestrator.check(ASSET_ID, PROFILE_ID, ASSET_PAYLOAD));
+  }
+
+  @Test
+  void check_clientThrowsClientException_propagates() {
+    var cause = new ClientException("business error from compliance service");
+    when(profileResolver.getProfileConfig(PROFILE_ID)).thenReturn(Optional.of(MOCK_CONFIG));
+    when(tfService.isEnabled(FAMILY_ID)).thenReturn(true);
+    when(clientRegistry.resolve("jwt-vc-compliance")).thenReturn(mockClient);
+    when(mockClient.check(any(), any())).thenThrow(cause);
+
+    assertThrows(ClientException.class,
+        () -> orchestrator.check(ASSET_ID, PROFILE_ID, ASSET_PAYLOAD));
+  }
+}

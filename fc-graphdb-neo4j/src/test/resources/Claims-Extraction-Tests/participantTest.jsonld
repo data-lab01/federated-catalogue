@@ -1,0 +1,45 @@
+{
+    "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://identity.foundation/presentation-exchange/submission/v1"
+    ],
+    "type": [
+        "VerifiablePresentation",
+        "PresentationSubmission"
+    ],
+    "verifiableCredential": [
+        {
+            "@context": [
+                "https://www.w3.org/ns/credentials/v2",
+                "https://www.w3.org/2018/credentials/examples/v1"
+            ],
+            "id": "https://example.com/credentials/1872",
+            "type": [
+                "VerifiableCredential",
+                "IDCardCredential"
+            ],
+            "issuer": {
+                "id": "did:example:issuer"
+            },
+            "validFrom": "2010-01-01T19:23:24Z",
+            "credentialSubject": {
+                "given_name": "Fredrik",
+                "family_name": "Str&#246;mberg",
+                "birthdate": "1949-01-22"
+            }
+        }
+    ],
+    "id": "0949d1a0",
+    "holder": "did:example:holder",
+    "presentation_submission": {
+        "id": "Selective disclosure example presentation",
+        "definition_id": "Selective disclosure example",
+        "descriptor_map": [
+            {
+                "id": "ID Card with constraints",
+                "format": "ldp_vc",
+                "path": "$.verifiableCredential[0]"
+            }
+        ]
+    }
+}

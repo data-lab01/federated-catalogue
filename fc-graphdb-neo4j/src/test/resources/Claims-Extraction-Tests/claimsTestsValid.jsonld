@@ -1,0 +1,60 @@
+{
+    "@context": [
+		"https://www.w3.org/ns/credentials/v2",
+		"https://www.w3.org/2018/credentials/examples/v1"
+	],
+    "@type": [
+      "VerifiableCredential",
+      "ServiceOfferingExperimental"
+    ],
+    "@id": "https://delta-dao.com/.well-known/serviceMVGPortal.json",
+    "credentialSubject": {
+	  "@context": {
+		"sh": "http://www.w3.org/ns/shacl#",
+		"xsd": "http://www.w3.org/2001/XMLSchema#",
+		"gx": "https://w3id.org/gaia-x/2511#"
+	  },
+      "id": "https://delta-dao.com/.well-known/serviceMVGPortal.json",
+      "@type": [
+          "gx:ServiceOffering"
+       ],
+      "gx:providedBy": {
+        "@type": "xsd:string",
+        "@value": "https://delta-dao.com/.well-known/participant.json"
+      },
+      "gx:name": {
+        "@type": "xsd:string",
+        "@value": "EuProGigant Portal"
+      },
+      "gx:description": {
+        "@type": "xsd:string",
+        "@value": "EuProGigant Minimal Viable Gaia-X Portal"
+      },
+      "gx:TermsAndConditions": {
+        "gx:url": {
+          "@value": "https://euprogigant.com/en/terms/",
+          "@type": "xsd:string"
+        },
+        "gx:hash": {
+          "@value": "contentHash",
+          "@type": "xsd:string"
+        }
+      }
+    },
+  "complianceCredential": {
+    "@context": [
+      "https://www.w3.org/ns/credentials/v2"
+    ],
+    "@type": [
+      "VerifiableCredential",
+      "ServiceOfferingCredentialExperimental"
+    ],
+    "id": "https://catalogue.gaia-x.eu/credentials/ServiceOfferingCredentialExperimental/1655624138751",
+    "issuer": "did:web:compliance.gaia-x.eu",
+    "validFrom": "2022-06-19T07:35:38.751Z",
+    "credentialSubject": {
+      "id": "https://delta-dao.com/.well-known/serviceMVGPortal.json",
+      "hash": "963f65ac902e7bd6074663284eb52a2365fd3477f78a93b847e5a83e3d0e20e9"
+    }
+  }
+}

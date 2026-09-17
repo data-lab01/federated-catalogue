@@ -1,0 +1,176 @@
+package eu.xfsc.fc.core.service.validation;
+
+/*-
+ * ---license-start
+ * fc-service-core
+ * ---
+ * Copyright (c) 2022 - 2026 Contributors to the Eclipse Foundation
+ * ---
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License, Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ * ---license-end
+ */
+
+import eu.xfsc.fc.core.dao.validation.GraphSyncStatus;
+import eu.xfsc.fc.core.dao.validation.OutdatedReason;
+import eu.xfsc.fc.core.dao.validation.ValidationResult;
+import eu.xfsc.fc.core.dao.validation.ValidationResultRepository;
+import eu.xfsc.fc.core.service.graphdb.GraphStore;
+import java.util.List;
+import java.util.Optional;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Implements {@link ValidationResultStore} and provides
+ * validation result persistence with graph DB sync.
+ *
+ * <p>Write sequence: relational DB INSERT + graph DB write both happen inside the {@code @Transactional}
+ * boundary; the DB commits only when {@code store()} returns. If the DB fails to commit after a
+ * successful graph write, graph triples will exist without a corresponding DB row.
+ * If the graph write itself fails, the row is marked
+ * {@code FAILED} and no retry is attempted. The relational DB is the system of record.</p>
+ *
+ * <p>{@link #storeWithoutGraphSync} shares the same relational persistence but never attempts a
+ * graph write, for records that are not themselves asset-level claims. Such rows commit with
+ * {@code graphSyncStatus=EXCLUDED} and are skipped by graph rebuild — see
+ * {@link eu.xfsc.fc.core.dao.validation.GraphSyncStatus#EXCLUDED}.</p>
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class ValidationResultStoreImpl implements ValidationResultStore {
+
+  private final ValidationResultRepository repository;
+  private final GraphStore graphStore;
+  private final ValidationResultGraphWriter graphWriter;
+  private final ValidationResultHasher hasher;
+
+  /**
+   * {@inheritDoc}
+   *
+   * <p>Persists the result to the relational DB (with tamper-proof hash), then attempts a
+   * graph DB write (best-effort). The DB row is the source of truth; a failed graph
+   * write marks the row {@code FAILED} and is not retried.</p>
+   */
+  @Override
+  @Transactional
+  public Long store(ValidationResultRecord record) {
+    ValidationResult saved = persist(record, null);
+
+    // Note: the graph write happens while the @Transactional method is still open.
+    // The DB transaction commits when store() returns. Best-effort: graph write failure marks row FAILED; no retry.
+    tryWriteToGraph(saved);
+
+    return saved.getId();
+  }
+
+  @Override
+  @Transactional
+  public Long storeWithoutGraphSync(ValidationResultRecord record) {
+    // EXCLUDED is set on the initial insert (not via a second write like SYNCED/FAILED below)
+    // because there is no graph write attempt whose outcome the status could reflect.
+    return persist(record, GraphSyncStatus.EXCLUDED).getId();
+  }
+
+  private ValidationResult persist(ValidationResultRecord record, GraphSyncStatus initialGraphSyncStatus) {
+    ValidationResult entity = buildEntity(record);
+    entity.setGraphSyncStatus(initialGraphSyncStatus);
+    entity.setContentHash(hasher.hash(entity));
+    ValidationResult saved = repository.save(entity);
+    log.debug("store; saved ValidationResult id={}, conforms={}, graphSyncStatus={}",
+        saved.getId(), saved.isConforms(), saved.getGraphSyncStatus());
+    return saved;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Page<ValidationResult> getByAssetId(String assetId, Pageable pageable) {
+    return repository.findByAssetId(assetId, pageable);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<ValidationResult> getById(Long id) {
+    return repository.findById(id);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Page<ValidationResult> findAll(Pageable pageable) {
+    return repository.findAll(pageable);
+  }
+
+  @Override
+  @Transactional
+  public void deleteByAssetId(String assetId) {
+    List<ValidationResult> results = repository.findAllByAssetId(assetId);
+    log.debug("deleteByAssetId; found {} results for assetId={}", results.size(), assetId);
+    for (ValidationResult result : results) {
+      String iri = graphWriter.resultIri(result.getId());
+      try {
+        graphStore.deleteValidationResultClaims(iri);
+      } catch (Exception e) {
+        log.warn("deleteByAssetId; graph cleanup failed for result id={}: {}", result.getId(), e.getMessage());
+      }
+    }
+    repository.deleteAllByAssetId(assetId);
+    log.debug("deleteByAssetId; deleted {} DB rows for assetId={}", results.size(), assetId);
+  }
+
+  @Override
+  @Transactional
+  public void syncToGraph(ValidationResult result, GraphStore graphStore) {
+    try {
+      graphWriter.write(result, graphStore);
+      result.setGraphSyncStatus(GraphSyncStatus.SYNCED);
+      repository.saveAndFlush(result);
+    } catch (Exception e) {
+      log.error("syncToGraph; graph write failed for result id={}, marking FAILED", result.getId(), e);
+      result.setGraphSyncStatus(GraphSyncStatus.FAILED);
+      repository.saveAndFlush(result);
+    }
+  }
+
+  @Override
+  @Transactional
+  public void markOutdatedByAssetId(String assetId, OutdatedReason reason) {
+    repository.markOutdatedByAssetId(assetId, reason.name());
+    log.debug("markOutdatedByAssetId; marked outdated assetId={}, reason={}", assetId, reason.name());
+  }
+
+  private ValidationResult buildEntity(ValidationResultRecord record) {
+    ValidationResult entity = new ValidationResult();
+    entity.setAssetIds(record.assetIds().toArray(String[]::new));
+    entity.setValidatorIds(record.validatorIds().toArray(String[]::new));
+    entity.setValidatorType(record.validatorType());
+    entity.setConforms(record.conforms());
+    entity.setValidatedAt(record.validatedAt());
+    entity.setReport(record.report());
+    entity.setFailureCategory(record.failureCategory());
+    return entity;
+  }
+
+  private void tryWriteToGraph(ValidationResult saved) {
+    try {
+      graphWriter.write(saved, graphStore);
+      saved.setGraphSyncStatus(GraphSyncStatus.SYNCED);
+      repository.save(saved);
+    } catch (Exception e) {
+      log.error("store; graph DB write failed for result id={}, marking FAILED (no retry)",
+          saved.getId(), e);
+      saved.setGraphSyncStatus(GraphSyncStatus.FAILED);
+      repository.save(saved);
+    }
+  }
+}
